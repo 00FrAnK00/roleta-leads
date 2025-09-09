@@ -1,4 +1,4 @@
-# Dockerfile para Backend (NestJS) - Produção
+# Dockerfile para Frontend (Next.js) - Produção
 FROM node:18-alpine AS builder
 
 # Instalar dependências do sistema
@@ -9,7 +9,6 @@ WORKDIR /app
 
 # Copiar arquivos de dependências
 COPY package*.json ./
-COPY prisma ./prisma/
 
 # Instalar dependências
 RUN npm ci --only=production && npm cache clean --force
@@ -17,8 +16,10 @@ RUN npm ci --only=production && npm cache clean --force
 # Copiar código fonte
 COPY . .
 
-# Gerar cliente Prisma
-RUN npx prisma generate
+# Definir variáveis de ambiente para build
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NODE_ENV=production
 
 # Build da aplicação
 RUN npm run build
@@ -31,30 +32,26 @@ RUN apk add --no-cache libc6-compat curl
 
 # Criar usuário não-root
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nestjs
+RUN adduser --system --uid 1001 nextjs
 
 # Definir diretório de trabalho
 WORKDIR /app
 
 # Copiar arquivos necessários do builder
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
-
-# Criar diretório de logs
-RUN mkdir -p /app/logs && chown nestjs:nodejs /app/logs
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Mudar para usuário não-root
-USER nestjs
+USER nextjs
 
 # Expor porta
-EXPOSE 3002
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3002/api/health || exit 1
+  CMD curl -f http://localhost:3000/api/health || exit 1
 
 # Comando de inicialização
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["node", "server.js"]
 
